@@ -4,6 +4,7 @@ import os
 import time
 import sys
 import json
+import re
 
 import pymysql
 import prometheus_client as prom
@@ -50,6 +51,17 @@ def read_devices(conn):
     cursor.close()
     return devices
 
+def read_attributes(conn):
+    cursor = conn.cursor()
+    cursor.execute('SELECT attribute, expression FROM tc_attributes')
+
+    attributes = {}
+    for row in cursor:
+        if re.match(r'io[0-9]+', row[1]):
+            attributes[row[1]] = row[0]
+
+    return attributes
+
 def to_ms(interval):
     return int(interval * 1000)
 
@@ -67,9 +79,9 @@ def read_position(conn):
     cursor.close()
     return data
 
-def update_snapshot(snapshot, data, devices):
+def update_snapshot(snapshot, data, device_map, attribute_map):
     for row in data:
-        device = devices[row['deviceid']]
+        device = device_map[row['deviceid']]
 
         snapshot.latitude \
             .labels(device['name'], device['uniqueid']) \
@@ -93,16 +105,16 @@ def update_snapshot(snapshot, data, devices):
 
         attributes = json.loads(row['attributes'])
         for attr in attributes:
+            key = attr
+            if attr in attribute_map:
+                key = attribute_map[attr]
+
             snapshot.attributes \
-                .labels(device['name'], device['uniqueid'], attr) \
+                .labels(device['name'], device['uniqueid'], key) \
                 .set(attributes[attr])
 
 if __name__ == "__main__":
     conn = init_database()
-    devices = read_devices(conn)
-
-    print("Found devices: ")
-    print(devices)
 
     interval = int(getenv('INTERVAL', 60))
     print(f"INFO: Setting interval to {to_ms(interval)}ms")
@@ -115,8 +127,17 @@ if __name__ == "__main__":
         while True:
             start = time.time()
 
+            devices = read_devices(conn)
+            attributes = read_attributes(conn)
+
+            print("Found attributes: ")
+            print(attributes)
+
+            print("Found devices: ")
+            print(devices)
+
             data = read_position(conn)
-            update_snapshot(snapshot, data, devices)
+            update_snapshot(snapshot, data, devices, attributes)
 
             elapsed = time.time() - start
             sleep = interval - elapsed
