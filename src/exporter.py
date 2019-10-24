@@ -60,6 +60,7 @@ def read_attributes(conn):
         if re.match(r'io[0-9]+', row[1]):
             attributes[row[1]] = row[0]
 
+    cursor.close()
     return attributes
 
 def to_ms(interval):
@@ -150,5 +151,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print()
         print("Aborting execution")
-
-    conn.close()
+    finally:
+        conn.close()
