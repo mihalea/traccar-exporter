@@ -1,0 +1,28 @@
+version: '3'
+
+services:
+  database:
+    container_name: database
+    image: mariadb:latest
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_ROOT_HOST=%
+      - MYSQL_DATABASE=traccar
+      - MYSQL_USER=traccar
+      - MYSQL_PASSWORD=traccar
+    volumes:
+      - ./database.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  exporter:
+    container_name: exporter
+    build: .
+    environment:
+      - EXPORTER_PORT=8080
+      - DB_HOST=database
+      - DB_USERNAME=traccar
+      - DB_PASSWORD=traccar
+      - DB_DATABASE=traccar
+    ports:
+      - 8080:8080
