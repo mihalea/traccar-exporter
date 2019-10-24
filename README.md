@@ -12,10 +12,10 @@ services:
     container_name: traccar-exporter
     image: mihalea/traccar-exporter:latest
     environment:
-      - EXPORTER_PORT=8080 # Optional, default: 8080
-      - INTERVAL=60 # Optional, default: 60
-      - DB_PORT=3306 # Optional, default: 3306
-      - DB_HOSTNAME=database
+      - EXPORTER_PORT=8080   # Optional, default: 8080
+      - INTERVAL=60          # Optional, default: 60
+      - DB_PORT=3306         # Optional, default: 3306
+      - DB_HOST=database
       - DB_USERNAME=username
       - DB_PASSWORD=password
     ports:
