@@ -3,6 +3,7 @@
 import os
 import time
 import sys
+import json
 
 import pymysql
 import prometheus_client as prom
@@ -54,20 +55,47 @@ def to_ms(interval):
 
 def read_position(conn):
     cursor = conn.cursor(DictCursor)
-    cursor.execute("SELECT max(servertime) as servertime, latitude, deviceid \
-                    FROM tc_positions GROUP BY deviceid")
 
+    cursor.execute("SELECT deviceid, latitude, longitude, altitude, \
+                    speed, course, attributes \
+                    FROM tc_positions \
+                    WHERE (servertime, deviceid) IN \
+                    (SELECT max(servertime), deviceid FROM tc_positions\
+                     GROUP BY deviceid)")
     data = cursor.fetchall()
 
     cursor.close()
     return data
 
 def update_snapshot(snapshot, data, devices):
-    print(data)
-
     for row in data:
         device = devices[row['deviceid']]
-        snapshot.latitude.labels(device['name'], device['uniqueid']).set(row['latitude'])
+
+        snapshot.latitude \
+            .labels(device['name'], device['uniqueid']) \
+            .set(row['latitude'])
+
+        snapshot.longitude \
+            .labels(device['name'], device['uniqueid']) \
+            .set(row['longitude'])
+
+        snapshot.altitude \
+            .labels(device['name'], device['uniqueid']) \
+            .set(row['altitude'])
+
+        snapshot.speed \
+            .labels(device['name'], device['uniqueid']) \
+            .set(row['speed'])
+
+        snapshot.course \
+        .labels(device['name'], device['uniqueid']) \
+        .set(row['course'])
+
+        attributes = json.loads(row['attributes'])
+        for attr in attributes:
+            snapshot.attributes \
+                .labels(device['name'], device['uniqueid'], attr) \
+                .set(attributes[attr])
 
 if __name__ == "__main__":
     conn = init_database()
@@ -76,7 +104,7 @@ if __name__ == "__main__":
     print("Found devices: ")
     print(devices)
 
-    interval = int(getenv('INTERVAL', 5))
+    interval = int(getenv('INTERVAL', 60))
     print(f"INFO: Setting interval to {to_ms(interval)}ms")
 
     init_http()
