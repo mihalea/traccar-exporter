@@ -5,6 +5,7 @@ import time
 import sys
 import json
 import re
+import logging
 
 import pymysql
 import prometheus_client as prom
@@ -17,7 +18,7 @@ def getenv(param, default=None):
     if value:
         return value
     else:
-        print("ERROR: Missing environment variable: " + param)
+        logging.critical(f"Missing environment variable: {param}")
         sys.exit(1)
 
 def init_database():
@@ -27,14 +28,15 @@ def init_database():
     username = getenv('DB_USERNAME')
     password = getenv('DB_PASSWORD')
 
-    print(f"Connecting to {database} at {username}@{host}:{port}")
+    logging.info(f"Connecting to {database} at {username}@{host}:{port}")
     conn = pymysql.connect(host=host, port=port,
-        user=username, passwd=password, db=database)
+        user=username, passwd=password, db=database, autocommit=True)
 
     return conn
 
 def init_http():
     port=int(getenv('EXPORTER_PORT', 8080))
+    logging.info(f"Starting http handler on port {port}")
     prom.start_http_server(port)
 
 def read_devices(conn):
@@ -69,7 +71,7 @@ def to_ms(interval):
 def read_position(conn):
     cursor = conn.cursor(DictCursor)
 
-    cursor.execute("SELECT deviceid, latitude, longitude, altitude, \
+    cursor.execute("SELECT deviceid, servertime, latitude, longitude, altitude, \
                     speed, course, attributes \
                     FROM tc_positions \
                     WHERE (servertime, deviceid) IN \
@@ -81,7 +83,12 @@ def read_position(conn):
     return data
 
 def update_snapshot(snapshot, data, device_map, attribute_map):
+    if len(data) > len(device_map):
+        logging.error(f'Received more updates than devices available')
+
     for row in data:
+        logging.debug(f'Processing data: \n{data}')
+
         device = device_map[row['deviceid']]
 
         snapshot.latitude \
@@ -115,10 +122,14 @@ def update_snapshot(snapshot, data, device_map, attribute_map):
                 .set(attributes[attr])
 
 if __name__ == "__main__":
+    logging.basicConfig( \
+        level=logging.DEBUG, \
+        format='[%(levelname).4s] %(asctime)s: %(message)s' \
+        )
     conn = init_database()
 
     interval = int(getenv('INTERVAL', 60))
-    print(f"INFO: Setting interval to {to_ms(interval)}ms")
+    logging.info(f"Setting interval to {to_ms(interval)}ms")
 
     init_http()
 
@@ -131,11 +142,9 @@ if __name__ == "__main__":
             devices = read_devices(conn)
             attributes = read_attributes(conn)
 
-            print("Found attributes: ")
-            print(attributes)
+            logging.debug(f"Found attributes: {attributes}")
 
-            print("Found devices: ")
-            print(devices)
+            logging.debug(f"Found devices: {devices}")
 
             data = read_position(conn)
             update_snapshot(snapshot, data, devices, attributes)
@@ -143,13 +152,11 @@ if __name__ == "__main__":
             elapsed = time.time() - start
             sleep = interval - elapsed
             if sleep >= 0:
-                print(f"DEBUG: Execution finished in {to_ms(elapsed)}ms, sleeping for {to_ms(sleep)}ms")
+                logging.debug(f"Execution finished in {to_ms(elapsed)}ms, sleeping for {to_ms(sleep)}ms")
                 time.sleep(sleep)
             else:
-                print("WARN: Execution takes longer than the update interval!")
-                print(f"WARN: execution={to_ms(elapsed)}ms interval={to_ms(interval)}ms")
+                logging.warn(f"Execution takes longer than the update interval! execution={to_ms(elapsed)}ms interval={to_ms(interval)}ms")
     except KeyboardInterrupt:
-        print()
-        print("Aborting execution")
+        logging.info("Aborting execution by user request")
     finally:
         conn.close()
